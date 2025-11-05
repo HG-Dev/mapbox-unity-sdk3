@@ -35,6 +35,12 @@ namespace Mapbox.VectorModule.MeshGeneration.GameObjectModifiers
 			}
 		}
 		
+		/// <remarks>
+		/// `OnUpdateEntity`, `RefreshEntity`, or even `TouchEntity` could be more informative than `Run`.
+		/// As a developer, it would be nice to be able to imagine...
+		///		1. Why is this method called? (because the map was initialized? the map moved? an entity became visible on-screen?)
+		///		2. When or how often is this method called?
+		/// </remarks>>
 		public override void Run(VectorEntity ve, IMapInformation mapInformation)
 		{
 			if (_settings.Prefab == null)
