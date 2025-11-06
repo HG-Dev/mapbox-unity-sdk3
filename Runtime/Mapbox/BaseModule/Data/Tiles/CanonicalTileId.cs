@@ -5,7 +5,9 @@
 //-----------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Mapbox.BaseModule.Data.Tiles
 {
@@ -13,21 +15,39 @@ namespace Mapbox.BaseModule.Data.Tiles
 	/// Data type to store  <see href="https://en.wikipedia.org/wiki/Web_Mercator"> Web Mercator</see> tile scheme.
 	/// <see href="http://www.maptiler.org/google-maps-coordinates-tile-bounds-projection/"> See tile IDs in action. </see>
 	/// </summary>
-	[Serializable]
-	public struct CanonicalTileId : IEquatable<CanonicalTileId>
+	public readonly struct CanonicalTileId : IEquatable<CanonicalTileId>
 	{
+		/// <summary>
+		/// Serializable child type.
+		/// This may not be necessary if CanonicalTileIds have no need to be serialized.
+		/// </summary>
+		[Serializable]
+		public struct SerializedValues
+		{
+			/// <summary> The zoom level. </summary>
+			public int z;
+
+			/// <summary> The X coordinate in the tile grid. </summary>
+			public int x;
+
+			/// <summary> The Y coordinate in the tile grid. </summary>
+			public int y;
+		
+			public CanonicalTileId ToReadOnly() => new CanonicalTileId(z,x,y);
+		}
+		
 		/// <summary> The zoom level. </summary>
-		public int Z;
+		public readonly int Z;
 
 		/// <summary> The X coordinate in the tile grid. </summary>
-		public int X;
+		public readonly int X;
 
 		/// <summary> The Y coordinate in the tile grid. </summary>
-		public int Y;
+		public readonly int Y;
 
 		/// <summary>
 		///     Initializes a new instance of the <see cref="CanonicalTileId"/> struct,
-		///     representing a tile coordinate in a slippy map.
+		///     representing a tile coordinate in a <see href="https://wiki.openstreetmap.org/wiki/Slippy_map">slippy map</see>.
 		/// </summary>
 		/// <param name="z"> The z coordinate or the zoom level. </param>
 		/// <param name="x"> The x coordinate. </param>
@@ -83,23 +103,10 @@ namespace Mapbox.BaseModule.Data.Tiles
 		/// </returns>
 		public override string ToString()
 		{
-			return string.Format("{0}/{1}/{2}", this.Z, this.X, this.Y);
+			return $"{Z}/{X}/{Y}";
 		}
 
-		public CanonicalTileId GetParentTileId
-		{
-			get
-			{
-				return new CanonicalTileId(Z - 1, X >> 1, Y >> 1);
-			}
-		}
-		
-		public void MoveToParent()
-		{
-			this.Z = this.Z - 1;
-			this.X = this.X >> 1;
-			this.Y = this.Y >> 1;
-		}
+		public CanonicalTileId GetParentTileId() => new(Z - 1, X >> 1, Y >> 1);
 
 		#region Equality 
 		public bool Equals(CanonicalTileId other)
@@ -143,26 +150,39 @@ namespace Mapbox.BaseModule.Data.Tiles
 
 		#endregion
 
-		public CanonicalTileId ParentAt(int i)
+		/// <summary>
+		/// If maxZoom is less than this CanonicalTileId's zoom level, get the ancestor with maxZoom.
+		/// Otherwise, this CanonicalTileId is returned. 
+		/// </summary>
+		/// <param name="maxZoom">Maximum allowed zoom level</param>
+		/// <returns>CanonicalTileId at or less than maxZoom</returns>
+		public CanonicalTileId ClampZoomToAncestorOrSelf(int maxZoom)
 		{
-			if (Z < i)
+			if (Z < maxZoom)
 			{
 				return this;
 			}
 
-			var delta = Z - i; //zoom level diff
-			for (int j = 0; j < delta; j++)
-			{
-				MoveToParent();
-			}
+			var delta = Z - maxZoom; //zoom level diff
+			return new CanonicalTileId(maxZoom, X >> delta, Y >> delta);
+		}
 
-			return this;
+		/// <summary>
+		/// Enumerate through the ancestors backwards from this CanonicalTileId.
+		/// </summary>
+		/// <param name="minZoomInclusive">Final zoom level allowed</param>
+		/// <returns>A sequence of CanonicalTileId structs</returns>
+		public IEnumerable<CanonicalTileId> EnumerateAncestors(int minZoomInclusive = 1)
+		{
+			for (var ancestor = GetParentTileId();
+			     ancestor.Z >= minZoomInclusive;
+			     ancestor = ancestor.GetParentTileId())
+			{
+				yield return ancestor;
+			}
 		}
 		
-		public bool IsParentOf(CanonicalTileId canonicalTileId)
-		{
-			return (this == canonicalTileId.ParentAt(this.Z));
-		}
+		public bool IsAncestorOf(CanonicalTileId canonicalTileId) => this == canonicalTileId.ClampZoomToAncestorOrSelf(Z);
 	}
 
 	public static class TileIdExtensions
@@ -175,7 +195,7 @@ namespace Mapbox.BaseModule.Data.Tiles
 			var offsetX = 0f;
 			var offsetY = 0f;
 
-			var currentParent = current.GetParentTileId;
+			var currentParent = current.GetParentTileId();
 
 			for (int i = tileZoom - 1; i >= zoomDiff; i--)
 			{
@@ -210,7 +230,7 @@ namespace Mapbox.BaseModule.Data.Tiles
 				}
 
 				current = currentParent;
-				currentParent.MoveToParent();
+				currentParent = currentParent.GetParentTileId();
 			}
 
 			return new Vector4(scale, scale, offsetX, offsetY);
@@ -224,7 +244,7 @@ namespace Mapbox.BaseModule.Data.Tiles
 			var offsetX = 0f;
 			var offsetY = 0f;
 
-			var currentParent = current.GetParentTileId;
+			var currentParent = current.GetParentTileId();
 
 			for (int i = tileZoom - 1; i >= zoomDiff; i--)
 			{
@@ -261,7 +281,7 @@ namespace Mapbox.BaseModule.Data.Tiles
 				}
 
 				current = currentParent;
-				currentParent.MoveToParent();
+				currentParent = currentParent.GetParentTileId();
 			}
 
 			return new Vector4(scale, scale, offsetX, offsetY);

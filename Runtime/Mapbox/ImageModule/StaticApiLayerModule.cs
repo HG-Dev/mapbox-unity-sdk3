@@ -40,11 +40,10 @@ namespace Mapbox.ImageModule
 				return;
 			}
 			
-			var parentTileId = unityTile.CanonicalTileId;
-			for (int i = unityTile.CanonicalTileId.Z; i >= 2; i--)
+			// Traverse from current zoom level to Z=2
+			foreach (var tileId in unityTile.CanonicalTileId.EnumerateAncestors(minZoomInclusive: 2))
 			{
-				parentTileId.MoveToParent();
-				if (_rasterSource.GetInstantData(parentTileId, out var instantData))
+				if (_rasterSource.GetInstantData(tileId, out var instantData))
 				{
 					unityTile.ImageContainer.SetImageData(instantData, TileContainerState.Temporary);
 					return;

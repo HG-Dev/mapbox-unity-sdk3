@@ -47,11 +47,9 @@ namespace Mapbox.ImageModule.Terrain
             }
             
             var targetTileId = GetDataId(unityTile.CanonicalTileId);
-            var parentTileId = targetTileId;
-            for (int i = parentTileId.Z; i >= 2; i--)
+            foreach (var tileId in targetTileId.EnumerateAncestors(minZoomInclusive: 2))
             {
-                parentTileId.MoveToParent();
-                if (_rasterSource.GetInstantData(parentTileId, out var instantData)  && instantData.IsElevationDataReady)
+                if (_rasterSource.GetInstantData(tileId, out var instantData)  && instantData.IsElevationDataReady)
                 {
                     unityTile.TerrainContainer.SetTerrainData(instantData, _settings.UseShaderTerrain, TileContainerState.Temporary);
                     _terrainStrategy.RegisterTile(unityTile, !_settings.UseShaderTerrain);
@@ -95,14 +93,13 @@ namespace Mapbox.ImageModule.Terrain
         public float QueryElevation(CanonicalTileId tileId, float x, float y)
         {
             var originalTileId = tileId;
-            var targetTileId = tileId;
-            for (int i = 0; i < 5; i++)
+            //TODO: Needs to be tested
+            foreach (var ancestorTileId in tileId.EnumerateAncestors(minZoomInclusive: 2).Take(5))
             {
-                if (_rasterSource.GetInstantData(targetTileId, out var instantData))
+                if (_rasterSource.GetInstantData(ancestorTileId, out var instantData))
                 {
                     return instantData.QueryHeightData(originalTileId, x, y);
                 }
-                targetTileId.MoveToParent();
             }
             
             return 0;
@@ -146,9 +143,12 @@ namespace Mapbox.ImageModule.Terrain
             return _settings.RejectTilesOutsideZoom.x <= targetZ && _settings.RejectTilesOutsideZoom.y >= targetZ;
         }
         
+        /// <remarks>What is with this arbitrary targetZ value...?</remarks>
         private CanonicalTileId GetDataId(CanonicalTileId tileId)
         {
             var maxZoom = _settings.DataSettings.ClampDataLevelToMax;
+            return tileId.ClampZoomToAncestorOrSelf(Mathf.Min(tileId.Z - 2, maxZoom));
+            /*
             var currentZ = tileId.Z;
             var targetZ = currentZ - 2;
             if (targetZ >= maxZoom)
@@ -158,7 +158,7 @@ namespace Mapbox.ImageModule.Terrain
             else
             {
                 return tileId.ParentAt(targetZ);;
-            }
+            }*/
         }
         
         public IEnumerable<CanonicalTileId> GetDataId(IEnumerable<CanonicalTileId> tileIdList)

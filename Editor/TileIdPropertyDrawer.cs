@@ -4,8 +4,7 @@ using UnityEngine;
 
 namespace MapboxUnitySDK.Editor
 {
-    [InitializeOnLoad]
-    [CustomPropertyDrawer (typeof (CanonicalTileId)), CustomPropertyDrawer(typeof (UnwrappedTileId))]
+    [CustomPropertyDrawer (typeof (CanonicalTileId.SerializedValues)), CustomPropertyDrawer(typeof (UnwrappedTileId))]
     public class TileIdPropertyDrawer : PropertyDrawer {
 
         // TODO: this is sort of like, but not exactly like the X positional handling of Vector3

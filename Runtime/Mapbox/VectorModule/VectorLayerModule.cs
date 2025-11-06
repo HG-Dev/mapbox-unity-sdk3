@@ -269,13 +269,12 @@ namespace Mapbox.VectorModule
 							_retainedTiles.Add(child);
 						}
 					}
-					
-					for (int i = targetId.Z; i >= _vectorSourceSettings.MinZoom; i--)
+
+					foreach (var ancestorId in targetId.EnumerateAncestors(_vectorSourceSettings.MinZoom))
 					{
-						targetId.MoveToParent();
-						if (_readyTiles.Contains(targetId))
+						if (_readyTiles.Contains(ancestorId))
 						{
-							_retainedTiles.Add(targetId);
+							_retainedTiles.Add(ancestorId);
 							break;
 						}
 					}
@@ -284,14 +283,15 @@ namespace Mapbox.VectorModule
 		}
 
 		/// <remarks>
-		/// This method was poorly named and was overburdened with conditionals.
+		/// This method was poorly named and overburdened with conditionals.
 		/// A "clamp" method straight on CanonicalTileId would be preferable,
 		/// as would a read-only version of CanonicalTileId.
 		/// Read-only data structures don't play well with Editor serialization, so it makes sense that
 		/// in its current state, CanonicalTileId is just a group of public fields.
 		/// </remarks>
+		[Obsolete("Equivalent to ClampZoomToAncestorOrSelf")]
 		private CanonicalTileId GetDataClampedTargetTileId(CanonicalTileId tileId) =>
-			tileId.ParentAt(_vectorSourceSettings.TileDataMaxZoom);
+				tileId.ClampZoomToAncestorOrSelf(_vectorSourceSettings.TileDataMaxZoom);
 		
 		private void CreateVisual(CanonicalTileId tileId, VectorData vectorData, Action<MeshGenerationTaskResult> callback = null)
 		{
