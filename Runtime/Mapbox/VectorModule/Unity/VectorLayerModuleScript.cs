@@ -11,9 +11,10 @@ namespace Mapbox.VectorModule.Unity
 {
 	public class VectorLayerModuleScript : ModuleConstructorScript
 	{
-		[SerializeField] private VectorModuleSettings vectorModuleSettings;
-		
-		[SerializeField] private List<VectorLayerVisualizerObject> _layerVisualizers;
+		[FormerlySerializedAs("vectorModuleSettings")] 
+		[SerializeField] private VectorSourceSettingsBuilder settingsBuilder;
+		[FormerlySerializedAs("_layerVisualizers")] 
+		[SerializeField] private List<VectorLayerVisualizerObject> layerVisualizers;
 		public override ILayerModule ModuleImplementation { get; protected set; }
 
 		public void Start()
@@ -24,7 +25,7 @@ namespace Mapbox.VectorModule.Unity
 		public override ILayerModule ConstructModule(MapService service, IMapInformation mapInformation, UnityContext unityContext)
 		{
 			var dictionary = new Dictionary<string, IVectorLayerVisualizer>();
-			foreach (var visualizerObject in _layerVisualizers)
+			foreach (var visualizerObject in layerVisualizers)
 			{
 				if(visualizerObject == null) continue;
 				var visualizer = visualizerObject.ConstructLayerVisualizer(mapInformation, unityContext);
@@ -37,16 +38,9 @@ namespace Mapbox.VectorModule.Unity
 		private VectorLayerModule GetVectorLayerModule(IMapInformation mapInformation, UnityContext unityContext,
 			MapService service, Dictionary<string, IVectorLayerVisualizer> dictionary)
 		{
-			if (vectorModuleSettings.SourceType != VectorSourceType.Custom)
-			{
-				vectorModuleSettings.DataSettings.TilesetId = MapboxDefaultVector.GetParameters(vectorModuleSettings.SourceType).Id;
-			}
-			else
-			{
-				vectorModuleSettings.DataSettings.TilesetId = vectorModuleSettings.CustomSourceId;
-			}
+			var vectorDataSettings = settingsBuilder.BuildSettings();
 			
-			return new VectorLayerModule(mapInformation, service.GetVectorSource(vectorModuleSettings.DataSettings), unityContext, dictionary, vectorModuleSettings);
+			return new VectorLayerModule(mapInformation, service.GetVectorSource(vectorDataSettings), unityContext, dictionary, vectorDataSettings);
 		}
 
 		public override void OnDestroy()

@@ -24,7 +24,7 @@ namespace Mapbox.VectorModule
 		private Dictionary<string, IVectorLayerVisualizer> _layerVisualizers;
 		
 		private Source<VectorData> _vectorSource;
-		private VectorModuleSettings _vectorModuleSettings;
+		private VectorSourceSettings _vectorSourceSettings;
 		private IMapInformation _mapInformation;
 		
 		//tiles we need to cover the ideal tile list
@@ -32,13 +32,14 @@ namespace Mapbox.VectorModule
 		private HashSet<CanonicalTileId> _readyTiles;
 		private List<CanonicalTileId> _tilesToRemove;
 		
-		public VectorLayerModule(IMapInformation mapInformation, Source<VectorData> source, UnityContext unityContext, Dictionary<string, IVectorLayerVisualizer> layerVisualizers, VectorModuleSettings vectorModuleSettings = null) : base()
+		public VectorLayerModule(IMapInformation mapInformation, Source<VectorData> source, UnityContext unityContext, 
+			Dictionary<string, IVectorLayerVisualizer> layerVisualizers, VectorSourceSettings vectorSourceSettings = default)
 		{
 			_unityContext = unityContext;
 			_layerVisualizers = layerVisualizers;
 			_mapInformation = mapInformation;
 			_vectorSource = source;
-			_vectorModuleSettings = vectorModuleSettings ?? new VectorModuleSettings();
+			_vectorSourceSettings = vectorSourceSettings;
 			_readyTiles = new HashSet<CanonicalTileId>();
 			_vectorSource.CacheItemDisposed += ClearDisposedDataVisual;
 			_retainedTiles = new HashSet<CanonicalTileId>();
@@ -62,7 +63,7 @@ namespace Mapbox.VectorModule
 
 		public virtual bool LoadInstant(UnityMapTile unityTile)
 		{
-			var targetId = GetTargetTileId(unityTile.CanonicalTileId);
+			var targetId = GetDataClampedTargetTileId(unityTile.CanonicalTileId);
 			if (_readyTiles.Contains(targetId))
 				return true;
 			
@@ -148,7 +149,7 @@ namespace Mapbox.VectorModule
 
 		public void ReloadTile(CanonicalTileId tile)
 		{
-			var targetId = GetTargetTileId(tile);
+			var targetId = GetDataClampedTargetTileId(tile);
 			if (_readyTiles.Contains(targetId) && _vectorSource.GetInstantData(targetId, out var instantData))
 			{
 				ClearDisposedDataVisual(targetId);
@@ -168,7 +169,7 @@ namespace Mapbox.VectorModule
 		
 		public IEnumerable<CanonicalTileId> GetDataId(IEnumerable<CanonicalTileId> tileIdList)
 		{
-			return tileIdList.Select(GetTargetTileId).Distinct();
+			return tileIdList.Select(GetDataClampedTargetTileId).Distinct();
 		}
 		
 		//COROUTINE METHODS only used in initialization so far
@@ -212,7 +213,7 @@ namespace Mapbox.VectorModule
 			var targetTileIds = new HashSet<CanonicalTileId>();
 			foreach (var tile in tiles)
 			{
-				var targetId = GetTargetTileId(tile);
+				var targetId = GetDataClampedTargetTileId(tile);
 				if (IsZinSupportedRange(targetId.Z))
 				{
 					targetTileIds.Add(targetId);
@@ -226,7 +227,7 @@ namespace Mapbox.VectorModule
 
 		public IEnumerable<IEnumerator> GetTileCoverCoroutines(IEnumerable<CanonicalTileId> tiles)
 		{
-			var targetTiles = tiles.Where(x => IsZinSupportedRange(x.Z)).Select(GetTargetTileId).Distinct();
+			var targetTiles = tiles.Where(x => IsZinSupportedRange(x.Z)).Select(GetDataClampedTargetTileId).Distinct();
 			return targetTiles.Select(x => LoadAndProcessTileCoroutine(x));
 		}
 		
@@ -237,7 +238,7 @@ namespace Mapbox.VectorModule
 		
 		private bool IsZinSupportedRange(int targetZ)
 		{
-			return _vectorModuleSettings.RejectTilesOutsideZoom.x <= targetZ && _vectorModuleSettings.RejectTilesOutsideZoom.y >= targetZ && _vectorSource.IsZinSupportedRange(targetZ);
+			return _vectorSourceSettings.ValidateZoomLevel(targetZ) && _vectorSource.IsZinSupportedRange(targetZ);
 		}
 		
 		private void UpdateRetainedTiles(HashSet<CanonicalTileId> retainedTiles)
@@ -245,10 +246,10 @@ namespace Mapbox.VectorModule
 			_retainedTiles.Clear();
 			foreach (var tileId in retainedTiles)
 			{
-				var targetId = GetTargetTileId(tileId);
+				var targetId = GetDataClampedTargetTileId(tileId);
 				if (IsZinSupportedRange(targetId.Z))
 				{
-					if(targetId.Z < _vectorModuleSettings.RejectTilesOutsideZoom.x)
+					if(targetId.Z < _vectorSourceSettings.MinZoom)
 						continue;
 					_retainedTiles.Add(targetId);
 				}
@@ -269,7 +270,7 @@ namespace Mapbox.VectorModule
 						}
 					}
 					
-					for (int i = targetId.Z; i >= _vectorModuleSettings.RejectTilesOutsideZoom.x; i--)
+					for (int i = targetId.Z; i >= _vectorSourceSettings.MinZoom; i--)
 					{
 						targetId.MoveToParent();
 						if (_readyTiles.Contains(targetId))
@@ -281,26 +282,16 @@ namespace Mapbox.VectorModule
 				}
 			}
 		}
-		
-		private CanonicalTileId GetTargetTileId(CanonicalTileId tileId)
-		{
-			var maxZoom = _vectorModuleSettings.DataSettings.ClampDataLevelToMax;
-			if (tileId.Z >= maxZoom)
-			{
-				return tileId.Z > maxZoom
-					? tileId.ParentAt(maxZoom)
-					: tileId;
-			}
-			else
-			{
-				return tileId;
-			}
-		}
-		
-		private IEnumerable<CanonicalTileId> GetTargetTileId(IEnumerable<CanonicalTileId> tileIdList)
-		{
-			return tileIdList.Select(GetTargetTileId).ToList();
-		}
+
+		/// <remarks>
+		/// This method was poorly named and was overburdened with conditionals.
+		/// A "clamp" method straight on CanonicalTileId would be preferable,
+		/// as would a read-only version of CanonicalTileId.
+		/// Read-only data structures don't play well with Editor serialization, so it makes sense that
+		/// in its current state, CanonicalTileId is just a group of public fields.
+		/// </remarks>
+		private CanonicalTileId GetDataClampedTargetTileId(CanonicalTileId tileId) =>
+			tileId.ParentAt(_vectorSourceSettings.TileDataMaxZoom);
 		
 		private void CreateVisual(CanonicalTileId tileId, VectorData vectorData, Action<MeshGenerationTaskResult> callback = null)
 		{
